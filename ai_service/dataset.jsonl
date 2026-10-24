@@ -1,0 +1,16 @@
+
+{"id":"NLP001","message":"Saya sakit kepala dan demam","expected_intent":"symptom_inquiry","expected_symptoms":["sakit kepala","demam"],"expected_negated_symptoms":[],"expected_safety_level":"normal"}
+{"id":"NLP002","message":"Kepala saya nyut-nyutan","expected_intent":"symptom_inquiry","expected_symptoms":["sakit kepala"],"expected_negated_symptoms":[],"expected_safety_level":"normal"}
+{"id":"NLP003","message":"Saya tidak demam, tetapi batuk","expected_intent":"symptom_inquiry","expected_symptoms":["batuk"],"expected_negated_symptoms":["demam"],"expected_safety_level":"normal"}
+{"id":"NLP004","message":"Saya tidak batuk, tetapi pilek","expected_intent":"symptom_inquiry","expected_symptoms":["pilek"],"expected_negated_symptoms":["batuk"],"expected_safety_level":"normal"}
+{"id":"NLP005","message":"Saya demam dan batuk","expected_intent":"symptom_inquiry","expected_symptoms":["demam","batuk"],"expected_negated_symptoms":[],"expected_safety_level":"normal"}
+{"id":"NLP006","message":"Hidung meler dan mual","expected_intent":"symptom_inquiry","expected_symptoms":["pilek","mual"],"expected_negated_symptoms":[],"expected_safety_level":"normal"}
+{"id":"NLP007","message":"Kepala terasa berputar","expected_intent":"symptom_inquiry","expected_symptoms":["pusing"],"expected_negated_symptoms":[],"expected_safety_level":"normal"}
+{"id":"NLP008","message":"Saya tidak demam","expected_intent":"unknown","expected_symptoms":[],"expected_negated_symptoms":["demam"],"expected_safety_level":"normal"}
+{"id":"NLP009","message":"Apakah obat ini tersedia?","expected_intent":"medicine_availability","expected_symptoms":[],"expected_negated_symptoms":[],"expected_safety_level":"normal"}
+{"id":"NLP010","message":"Apa efek samping obat ini?","expected_intent":"medicine_information","expected_symptoms":[],"expected_negated_symptoms":[],"expected_safety_level":"normal"}
+{"id":"NLP011","message":"Halo, selamat pagi","expected_intent":"unknown","expected_symptoms":[],"expected_negated_symptoms":[],"expected_safety_level":"normal"}
+{"id":"NLP012","message":"Saya sesak napas","expected_intent":"unknown","expected_symptoms":[],"expected_negated_symptoms":[],"expected_safety_level":"urgent"}
+{"id":"NLP013","message":"Dada terasa sakit","expected_intent":"unknown","expected_symptoms":[],"expected_negated_symptoms":[],"expected_safety_level":"urgent"}
+{"id":"NLP014","message":"Saya batuk ringan","expected_intent":"symptom_inquiry","expected_symptoms":["batuk"],"expected_negated_symptoms":[],"expected_safety_level":"normal"}
+{"id":"NLP015","message":"Saya belum demam, tapi sekarang batuk","expected_intent":"symptom_inquiry","expected_symptoms":["batuk"],"expected_negated_symptoms":["demam"],"expected_safety_level":"normal"}

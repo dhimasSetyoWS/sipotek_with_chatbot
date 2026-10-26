@@ -1,149 +1,184 @@
 
 import json
-from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
+from collections import defaultdict
+from pathlib import Path
 
-API_URL = "http://127.0.0.1:8001/analyze"
-DATASET_PATH = "dataset.jsonl"
+from main import (
+    classify_intent,
+    extract_symptoms,
+)
+
+from safety import check_safety
+
+
+DATASET_PATH = "dataset_dev.jsonl"
 
 
 def load_dataset(path):
-    dataset = []
+    """Membaca dataset evaluasi berformat JSONL."""
+    dataset_path = Path(path)
 
-    with open(path, "r", encoding="utf-8") as file:
+    if not dataset_path.exists():
+        raise FileNotFoundError(
+            f"Dataset tidak ditemukan: {dataset_path.resolve()}"
+        )
+
+    data = []
+
+    with dataset_path.open("r", encoding="utf-8") as file:
         for line_number, line in enumerate(file, start=1):
             if not line.strip():
                 continue
 
             try:
-                dataset.append(json.loads(line))
-            except json.JSONDecodeError as exc:
+                data.append(json.loads(line))
+            except json.JSONDecodeError as error:
                 raise ValueError(
-                    f"JSON tidak valid pada baris {line_number}: {exc}"
-                ) from exc
+                    f"JSON tidak valid pada baris {line_number}: {error}"
+                ) from error
 
-    return dataset
-
-
-def call_api(message):
-    payload = json.dumps({"message": message}).encode("utf-8")
-
-    request = Request(
-        API_URL,
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-
-    with urlopen(request, timeout=10) as response:
-        return json.loads(response.read().decode("utf-8"))
+    return data
 
 
-def exact_match(actual, expected):
-    return set(actual or []) == set(expected or [])
+def evaluate(dataset):
+    """Mengevaluasi intent, gejala, negasi, dan tingkat keselamatan."""
+    metrics = {
+        "intent": {"correct": 0, "total": 0},
+        "symptoms": {"correct": 0, "total": 0},
+        "negation": {"correct": 0, "total": 0},
+        "safety": {"correct": 0, "total": 0},
+    }
+
+    failures = defaultdict(list)
+
+    for item in dataset:
+        message = item["message"]
+        example_id = item.get("id", "unknown")
+        symptomp = item["expected_symptoms"]
+        # Evaluasi intent
+        expected_intent = item["expected_intent"]
+        predicted_intent = classify_intent(message, symptomp)
+
+        metrics["intent"]["total"] += 1
+
+        if predicted_intent == expected_intent:
+            metrics["intent"]["correct"] += 1
+        else:
+            failures["intent"].append({
+                "id": example_id,
+                "message": message,
+                "expected": expected_intent,
+                "predicted": predicted_intent,
+            })
+
+        # Evaluasi gejala positif dan gejala yang dinegasikan
+        symptom_result = extract_symptoms(message)
+
+        predicted_symptoms = set(symptom_result["symptoms"])
+        expected_symptoms = set(item["expected_symptoms"])
+
+        metrics["symptoms"]["total"] += 1
+
+        if predicted_symptoms == expected_symptoms:
+            metrics["symptoms"]["correct"] += 1
+        else:
+            failures["symptoms"].append({
+                "id": example_id,
+                "message": message,
+                "expected": sorted(expected_symptoms),
+                "predicted": sorted(predicted_symptoms),
+            })
+
+        expected_negated = set(item["expected_negated_symptoms"])
+        predicted_negated = set(symptom_result["negated_symptoms"])
+
+        metrics["negation"]["total"] += 1
+
+        if predicted_negated == expected_negated:
+            metrics["negation"]["correct"] += 1
+        else:
+            failures["negation"].append({
+                "id": example_id,
+                "message": message,
+                "expected": sorted(expected_negated),
+                "predicted": sorted(predicted_negated),
+            })
+
+        # Evaluasi safety
+        safety_result = check_safety(message)
+
+        expected_safety = item["expected_safety_level"]
+        predicted_safety = safety_result["level"]
+
+        metrics["safety"]["total"] += 1
+
+        if predicted_safety == expected_safety:
+            metrics["safety"]["correct"] += 1
+        else:
+            failures["safety"].append({
+                "id": example_id,
+                "message": message,
+                "expected": expected_safety,
+                "predicted": predicted_safety,
+                "red_flags": safety_result.get("red_flags", []),
+            })
+
+    return metrics, failures
 
 
-def percentage(correct, total):
-    if total == 0:
-        return 0.0
+def print_results(metrics, failures):
+    """Menampilkan ringkasan evaluasi dan contoh kesalahan."""
+    print("\n" + "=" * 55)
+    print("HASIL EVALUASI BASELINE NLP CHATBOT APOTEK")
+    print("=" * 55)
 
-    return correct / total * 100
+    for metric_name, result in metrics.items():
+        correct = result["correct"]
+        total = result["total"]
+
+        accuracy = (correct / total * 100) if total else 0
+
+        print(
+            f"{metric_name.capitalize():<12}: "
+            f"{correct}/{total} ({accuracy:.2f}%)"
+        )
+
+    print("\n" + "=" * 55)
+    print("DETAIL KESALAHAN")
+    print("=" * 55)
+
+    for metric_name, errors in failures.items():
+        print(f"\n[{metric_name.upper()}] {len(errors)} kesalahan")
+
+        for error in errors:
+            print(f"\nID       : {error['id']}")
+            print(f"Pesan    : {error['message']}")
+            print(f"Expected : {error['expected']}")
+            print(f"Predicted: {error['predicted']}")
+
+            if "red_flags" in error:
+                print(f"Red flags: {error['red_flags']}")
+
+    total_errors = sum(len(errors) for errors in failures.values())
+
+    print("\n" + "=" * 55)
+    print(f"Total kesalahan per metrik: {total_errors}")
+    print("=" * 55)
 
 
 def main():
-    dataset = load_dataset(DATASET_PATH)
+    try:
+        dataset = load_dataset(DATASET_PATH)
 
-    if not dataset:
-        print("Dataset kosong.")
-        return
+        if not dataset:
+            print("Dataset kosong. Tidak ada evaluasi yang dilakukan.")
+            return
 
-    results = []
+        metrics, failures = evaluate(dataset)
+        print(f"Jumlah data evaluasi: {len(dataset)}")
+        print_results(metrics, failures)
 
-    for item in dataset:
-        try:
-            actual = call_api(item["message"])
-        except (URLError, HTTPError, TimeoutError, ValueError) as exc:
-            print(f"Gagal menguji {item['id']}: {exc}")
-            continue
+    except (FileNotFoundError, ValueError, KeyError) as error:
+        print(f"Evaluasi gagal: {error}")
 
-        safety = actual.get("safety") or {}
-
-        checks = {
-            "intent": (
-                actual.get("intent")
-                == item["expected_intent"]
-            ),
-            "symptoms": exact_match(
-                actual.get("symptoms", []),
-                item["expected_symptoms"],
-            ),
-            "negation": exact_match(
-                actual.get("negated_symptoms", []),
-                item["expected_negated_symptoms"],
-            ),
-            "safety": (
-                safety.get("level")
-                == item["expected_safety_level"]
-            ),
-        }
-
-        results.append({
-            "id": item["id"],
-            "message": item["message"],
-            "checks": checks,
-            "actual": actual,
-            "expected": item,
-        })
-
-    if not results:
-        print("Tidak ada pengujian yang berhasil dijalankan.")
-        return
-
-    total = len(results)
-
-    metrics = {
-        key: sum(
-            result["checks"][key]
-            for result in results
-        )
-        for key in ("intent", "symptoms", "negation", "safety")
-    }
-
-    print(f"\nJumlah contoh berhasil diuji: {total}\n")
-
-    for name, correct in metrics.items():
-        print(
-            f"{name:10s}: "
-            f"{correct}/{total} "
-            f"({percentage(correct, total):.2f}%)"
-        )
-
-    print("\n--- Kasus yang gagal ---")
-
-    failures = 0
-
-    for result in results:
-        failed_checks = [
-            name
-            for name, passed in result["checks"].items()
-            if not passed
-        ]
-
-        if not failed_checks:
-            continue
-
-        failures += 1
-
-        print(f"\n[{result['id']}] {result['message']}")
-        print("Bagian gagal:", ", ".join(failed_checks))
-        print("Ekspektasi:")
-        print(json.dumps(result["expected"], ensure_ascii=False))
-        print("Aktual:")
-        print(json.dumps(result["actual"], ensure_ascii=False))
-
-    if failures == 0:
-        print("Semua pemeriksaan cocok dengan label dataset.")
-
-
-if __name__ == "__main__":
-    main()
+main()

@@ -1,194 +1,101 @@
-
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
-from safety import check_safety
 import re
+from safety import check_safety
 
 app = FastAPI(title="Apotek AI Service")
-
 
 class AnalyzeRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
 
-
-# Kamus gejala dan variasi kata yang mungkin digunakan pengguna.
 SYMPTOM_ALIASES = {
-    "sakit kepala": [
-        "sakit kepala",
-        "nyeri kepala",
-        "kepala sakit",
-        "kepala nyut nyutan",
-        "pusing di kepala",
-        "nyut nyutan"
-    ],
-    "demam": [
-        "demam",
-        "badan panas",
-        "panas badan",
-    ],
-    "batuk": [
-        "batuk",
-        "terbatuk",
-    ],
-    "pilek": [
-        "pilek",
-        "hidung meler",
-        "ingusan",
-        "hidung berair",
-    ],
-    "mual": [
-        "mual",
-        "perut terasa mual",
-        "ingin muntah",
-    ],
-    "pusing": [
-        "pusing",
-        "kepala terasa berputar",
-        "kunang kunang",
-    ],
+    "sakit kepala": ["sakit kepala", "nyeri kepala", "kepala sakit", "kepala saya sakit", "kepala terasa sakit", "kepala nyut nyutan", "kepala cenat cenut", "pusing di kepala", "nyut nyutan", "cenat cenut"],
+    "demam": ["demam", "badan panas", "panas badan", "meriang"],
+    "batuk": ["batuk", "terbatuk"],
+    "pilek": ["pilek", "hidung meler", "ingusan", "hidung berair", "meler"],
+    "mual": ["mual", "perut terasa mual", "ingin muntah"],
+    "pusing": ["pusing", "kepala terasa berputar", "kunang kunang"],
 }
 
-NEGATION_WORDS = {
-    "tidak",
-    "bukan",
-    "belum",
-    "tanpa",
-    "enggak",
-    "nggak",
-    "gak",
-    "ga",
-}
+NEGATION_WORDS = {"tidak", "bukan", "belum", "tanpa", "enggak", "nggak", "gak", "ga"}
+CLAUSE_BOUNDARIES = {"tapi", "tetapi", "namun", "sedangkan", "melainkan", "cuma", "hanya", "justru"}
 
-AVAILABILITY_KEYWORDS = [
-    "stok",
-    "persediaan",
-    "tersedia",
-    "ketersediaan",
-    "ada obat",
-    "obat apa yang ada",
+AVAILABILITY_PATTERNS = [
+    r"\bstok\b", r"\bpersediaan\b", r"\btersedia\b", r"\bketersediaan\b",
+    r"\bcek stok\b", r"\bmasih ada\b", r"\bada stok\b", r"\bada obat\b",
+    r"\bpunya obat\b", r"\bapotek punya\b", r"\bobat\b.{0,45}\b(kosong|ada|tersedia)\b",
 ]
-
-MEDICINE_INFO_KEYWORDS = [
-    "kegunaan obat",
-    "fungsi obat",
-    "efek samping",
-    "kontraindikasi",
-    "aturan pakai",
-    "cara minum",
+MEDICINE_INFO_PATTERNS = [
+    r"\befek samping\b", r"\bkontraindikasi\b", r"\baturan pakai\b", r"\bcara minum\b",
+    r"\bcara menggunakan\b", r"\bdigunakan untuk apa\b", r"\bfungsi\b", r"\bkegunaan\b",
+    r"\bmanfaat\b", r"\bkandungan\b", r"\bperingatan\b", r"\binteraksi\b",
+    r"\bdosis\b", r"\bgolongan obat\b", r"\baman digunakan\b", r"\binformasi obat\b",
 ]
-
-
-CLAUSE_BOUNDARIES = {
-    "tapi",
-    "tetapi",
-    "namun",
-    "sedangkan",
-    "melainkan",
-}
 
 def normalize_text(text: str) -> str:
-    """Merapikan teks agar lebih mudah diproses."""
-    text = text.lower().strip()
-
-    # Samakan beberapa variasi penulisan informal.
-    text = re.sub(r"\b(nyut-nyutan|nyut nyutan)\b", "nyut nyutan", text)
-
-    # Hilangkan tanda baca dan rapikan spasi.
+    text = text.lower().strip().replace("nyut-nyutan", "nyut nyutan").replace("cenat-cenut", "cenat cenut")
     text = re.sub(r"[^\w\s]", " ", text)
-    text = re.sub(r"\s+", " ", text)
-
-    return text.strip()
-
+    return re.sub(r"\s+", " ", text).strip()
 
 def contains_phrase(text: str, phrase: str) -> bool:
-    """Memastikan frasa cocok sebagai kata/frasa utuh."""
-    pattern = rf"(?<!\w){re.escape(phrase)}(?!\w)"
-    return re.search(pattern, text) is not None
+    phrase = normalize_text(phrase)
+    return re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", text) is not None
 
+def _phrase_matches(text: str, phrase: str):
+    phrase = normalize_text(phrase)
+    return list(re.finditer(rf"(?<!\w){re.escape(phrase)}(?!\w)", text))
+
+def _is_negated_occurrence(text: str, start: int, end: int) -> bool:
+    words = text[:start].strip().split()
+    boundary_index = max((i for i, word in enumerate(words) if word in CLAUSE_BOUNDARIES), default=-1)
+    context_words = words[boundary_index + 1:][-4:]
+    if any(word in NEGATION_WORDS for word in context_words):
+        return True
+    after = text[end:]
+    return re.match(r"\s*(?:sekarang|kini|saat ini)\s+(?:(?:sudah|masih)\s+)?(?:tidak|bukan|belum|enggak|nggak|gak|ga)\b", after) is not None
 
 def is_negated(text: str, phrase: str) -> bool:
-    pattern = rf"(?<!\w){re.escape(phrase)}(?!\w)"
-    match = re.search(pattern, text)
+    normalized = normalize_text(text)
+    matches = _phrase_matches(normalized, phrase)
+    return bool(matches and _is_negated_occurrence(normalized, matches[0].start(), matches[0].end()))
 
-    if not match:
-        return False
-
-    # Ambil teks sebelum gejala yang sedang diperiksa.
-    preceding_text = text[:match.start()].strip()
-    preceding_words = preceding_text.split()
-
-    # Cari batas klausa terdekat.
-    last_boundary_index = -1
-
-    for i, word in enumerate(preceding_words):
-        if word in CLAUSE_BOUNDARIES:
-            last_boundary_index = i
-
-    # Periksa hanya kata-kata setelah batas klausa.
-    current_clause = preceding_words[last_boundary_index + 1:]
-
-    # Periksa maksimal tiga kata sebelum gejala.
-    context_words = current_clause[-3:]
-
-    return any(
-        word in NEGATION_WORDS
-        for word in context_words
-    )
-
+def _is_medicine_mention(text: str, start: int) -> bool:
+    prefix = text[:start].strip()
+    return re.search(r"\b(?:obat|obat untuk|obat sakit|obat batuk|obat demam|obat pilek|obat mual|obat pusing|obat kepala)\s*$", prefix) is not None
 
 def extract_symptoms(text: str) -> dict:
-    symptoms = []
-    negated_symptoms = []
-
+    symptoms, negated_symptoms = [], []
     for symptom, aliases in SYMPTOM_ALIASES.items():
-        found_positive = False
-        found_negated = False
-
+        positive_found = negated_found = False
         for alias in aliases:
-            if not contains_phrase(text, alias):
-                continue
-
-            if is_negated(text, alias):
-                found_negated = True
-            else:
-                found_positive = True
-
-        if found_positive:
+            for match in _phrase_matches(text, alias):
+                if _is_medicine_mention(text, match.start()):
+                    continue
+                if _is_negated_occurrence(text, match.start(), match.end()):
+                    negated_found = True
+                else:
+                    positive_found = True
+        if positive_found:
             symptoms.append(symptom)
-        elif found_negated:
+        elif negated_found:
             negated_symptoms.append(symptom)
+    return {"symptoms": symptoms, "negated_symptoms": negated_symptoms}
 
-    return {
-        "symptoms": symptoms,
-        "negated_symptoms": negated_symptoms,
-    }
-
+def _matches_any(text: str, patterns: list[str]) -> bool:
+    return any(re.search(pattern, text) for pattern in patterns)
 
 def classify_intent(text: str, symptoms: list[str]) -> str:
-    """Menentukan tujuan utama pesan berdasarkan aturan sederhana."""
-
-    if any(
-        contains_phrase(text, keyword)
-        for keyword in AVAILABILITY_KEYWORDS
-    ):
+    if _matches_any(text, AVAILABILITY_PATTERNS):
         return "medicine_availability"
-
-    if any(
-        contains_phrase(text, keyword)
-        for keyword in MEDICINE_INFO_KEYWORDS
-    ):
+    if _matches_any(text, MEDICINE_INFO_PATTERNS):
         return "medicine_information"
-
     if symptoms:
         return "symptom_inquiry"
-
     return "unknown"
-
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
 
 @app.post("/analyze")
 def analyze(data: AnalyzeRequest):
@@ -197,22 +104,13 @@ def analyze(data: AnalyzeRequest):
     extracted = extract_symptoms(normalized_text)
     symptoms = extracted["symptoms"]
     negated_symptoms = extracted["negated_symptoms"]
-
     intent = classify_intent(normalized_text, symptoms)
-
-    needs_clarification = (
-        intent == "unknown"
-        or (
-            intent == "symptom_inquiry"
-            and len(symptoms) == 0
-        )
-    )
-
+    needs_clarification = intent == "unknown" or (intent == "symptom_inquiry" and not symptoms)
     return {
         "intent": intent,
         "normalized_text": normalized_text,
         "symptoms": symptoms,
         "negated_symptoms": negated_symptoms,
         "needs_clarification": needs_clarification,
-        "safety" : safety
+        "safety": safety,
     }

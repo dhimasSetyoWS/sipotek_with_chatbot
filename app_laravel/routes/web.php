@@ -3,6 +3,7 @@
 use App\Http\Controllers\MedicineController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\MedicineBatchController;
+use App\Http\Controllers\MedicineKnowledgeController;
 use App\Models\Medicine;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -41,6 +42,10 @@ Route::prefix('dashboard')->middleware(['auth', 'verified'])->group(function () 
 
     Route::get('/obat-batches', [MedicineBatchController::class, 'index'])->name('obat.batches.index');
     Route::post('/obat-batches', [MedicineBatchController::class, 'store'])->name('obat.batches.store');
+
+    Route::get('/medicine-knowledge', [MedicineKnowledgeController::class, 'index'])->name('knowledge.index');
+    Route::post('/medicine-knowledge/{medicine}', [MedicineKnowledgeController::class, 'storeOrUpdate'])->name('knowledge.storeOrUpdate');
+    Route::patch('/medicine-knowledge/{medicine}/status', [MedicineKnowledgeController::class, 'updateStatus'])->name('knowledge.updateStatus');
 });
 
 

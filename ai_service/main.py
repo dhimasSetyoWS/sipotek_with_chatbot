@@ -1,10 +1,40 @@
+from pathlib import Path
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 import re
 from safety import check_safety
 
 app = FastAPI(title="Apotek AI Service")
+# Lokasi model hasil training IndoBERT
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_DIR = BASE_DIR / "models" / "indobert-intent"
 
+# Tentukan perangkat yang digunakan
+DEVICE = torch.device(
+    "cuda" if torch.cuda.is_available() else "cpu"
+)
+
+# Load tokenizer dan model satu kali ketika aplikasi dimulai
+tokenizer = AutoTokenizer.from_pretrained(str(MODEL_DIR))
+
+model = AutoModelForSequenceClassification.from_pretrained(
+    str(MODEL_DIR)
+)
+
+model.to(DEVICE)
+model.eval()
+
+# Ambil mapping ID kelas ke nama intent dari konfigurasi model
+ID2LABEL = {
+    int(key): value.lower()
+    for key, value in model.config.id2label.items()
+}
+
+print(f"IndoBERT loaded from: {MODEL_DIR}")
+print(f"Device: {DEVICE}")
+print(f"Intent labels: {ID2LABEL}")
 class AnalyzeRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
 
@@ -84,14 +114,52 @@ def extract_symptoms(text: str) -> dict:
 def _matches_any(text: str, patterns: list[str]) -> bool:
     return any(re.search(pattern, text) for pattern in patterns)
 
+CONFIDENCE_THRESHOLD = 0.60
+
+def predict_intent(text: str) -> str:
+    inputs = tokenizer(
+        text,
+        return_tensors="pt",
+        truncation=True,
+        max_length=128,
+    )
+
+    inputs = {
+        key: value.to(DEVICE)
+        for key, value in inputs.items()
+    }
+
+    with torch.inference_mode():
+        outputs = model(**inputs)
+        probabilities = torch.softmax(
+            outputs.logits,
+            dim=1,
+        )[0]
+
+    predicted_id = int(
+        torch.argmax(probabilities).item()
+    )
+
+    predicted_intent = ID2LABEL.get(
+        predicted_id,
+        "unknown",
+    )
+
+    confidence = float(
+        probabilities[predicted_id].item()
+    )
+
+    print(f"Text       : {text}")
+    print(f"Intent     : {predicted_intent}")
+    print(f"Confidence : {confidence:.4f}")
+
+    if confidence < CONFIDENCE_THRESHOLD:
+        return "unknown"
+
+    return predicted_intent
+
 def classify_intent(text: str, symptoms: list[str]) -> str:
-    if _matches_any(text, AVAILABILITY_PATTERNS):
-        return "medicine_availability"
-    if _matches_any(text, MEDICINE_INFO_PATTERNS):
-        return "medicine_information"
-    if symptoms:
-        return "symptom_inquiry"
-    return "unknown"
+    return predict_intent(text)
 
 @app.get("/health")
 def health():

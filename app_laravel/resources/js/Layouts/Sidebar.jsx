@@ -118,7 +118,7 @@ export default function Sidebar({
                 )}
 
                 {/* Navigation Items */}
-                <div className="flex-1 py-4 px-3 space-y-6 overflow-y-auto">
+                <div className="flex-1 py-4 px-3 space-y-6 overflow-y-auto scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                     {PHARMACY_NAV_ITEMS.map((group, gIdx) => (
                         <div key={gIdx} className="space-y-1">
                             {!sidebarCollapsed ? (

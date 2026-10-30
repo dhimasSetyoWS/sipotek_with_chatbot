@@ -12,7 +12,7 @@ export default function ModalObat({
 }) {
     const isEdit = mode === "edit";
     return (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/50  z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-2xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
                 <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                     <h3 className="font-bold text-sm text-slate-800 flex items-center space-x-2">

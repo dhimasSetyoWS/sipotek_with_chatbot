@@ -6,7 +6,8 @@ import {
     Receipt,
     Activity,
     Settings,
-    TrashOff
+    TrashOff,
+    BrainCircuit
 } from "lucide-react";
 
 export const PHARMACY_NAV_ITEMS = [
@@ -47,6 +48,14 @@ export const PHARMACY_NAV_ITEMS = [
                 // badge: "12 Expiring",
                 activeKey: "inventory",
 				target : "obat.batches.index"
+
+            },
+            {
+                name: "Basis Pengetahuan",
+                icon: BrainCircuit,
+                // badge: "12 Expiring",
+                activeKey: "inventory",
+				target : "knowledge.index"
 
             },
             {
